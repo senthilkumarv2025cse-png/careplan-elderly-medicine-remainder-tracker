@@ -19,6 +19,12 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.NOT_FOUND, exception.getMessage(), request);
     }
 
+    @ExceptionHandler({DoseAlreadyTakenException.class, DuplicateDoseLogException.class})
+    public ResponseEntity<ApiError> handleConflict(
+            RuntimeException exception, HttpServletRequest request) {
+        return error(HttpStatus.CONFLICT, exception.getMessage(), request);
+    }
+
     @ExceptionHandler({
         IllegalArgumentException.class,
         MethodArgumentNotValidException.class,
