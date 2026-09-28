@@ -3,6 +3,7 @@ package com.careplan.controller;
 import com.careplan.dto.ScheduleRequest;
 import com.careplan.dto.ScheduleResponse;
 import com.careplan.service.ScheduleService;
+import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
@@ -27,7 +28,7 @@ public class ScheduleController {
     }
 
     @PostMapping("/schedules")
-    public ResponseEntity<ScheduleResponse> create(@RequestBody ScheduleRequest request) {
+    public ResponseEntity<ScheduleResponse> create(@Valid @RequestBody ScheduleRequest request) {
         ScheduleResponse schedule = scheduleService.create(request);
         return ResponseEntity.created(URI.create("/api/schedules/" + schedule.id())).body(schedule);
     }
@@ -43,7 +44,7 @@ public class ScheduleController {
     }
 
     @PutMapping("/schedules/{id}")
-    public ScheduleResponse update(@PathVariable Long id, @RequestBody ScheduleRequest request) {
+    public ScheduleResponse update(@PathVariable Long id, @Valid @RequestBody ScheduleRequest request) {
         return scheduleService.update(id, request);
     }
 

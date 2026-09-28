@@ -1,6 +1,7 @@
 package com.careplan.repository;
 
 import com.careplan.entity.DoseLog;
+import com.careplan.enums.DoseStatus;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.Collection;
@@ -15,4 +16,10 @@ public interface DoseLogRepository extends JpaRepository<DoseLog, Long> {
 
     List<DoseLog> findAllBySchedule_IdInAndScheduledDate(
             Collection<Long> scheduleIds, LocalDate scheduledDate);
+
+    List<DoseLog> findAllBySchedule_Patient_IdAndScheduledDateBetweenOrderByScheduledDateAscScheduledTimeAsc(
+            Long patientId, LocalDate from, LocalDate to);
+
+    List<DoseLog> findAllBySchedule_Patient_IdAndStatusNotAndScheduledDateLessThanEqualOrderByScheduledDateAscScheduledTimeAsc(
+            Long patientId, DoseStatus status, LocalDate throughDate);
 }

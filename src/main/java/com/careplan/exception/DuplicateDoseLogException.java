@@ -1,8 +1,10 @@
 package com.careplan.exception;
 
-public class DuplicateDoseLogException extends RuntimeException {
+import org.springframework.http.HttpStatus;
+
+public class DuplicateDoseLogException extends BusinessException {
 
     public DuplicateDoseLogException(String message) {
-        super(message);
+        super(message, HttpStatus.CONFLICT);
     }
 }

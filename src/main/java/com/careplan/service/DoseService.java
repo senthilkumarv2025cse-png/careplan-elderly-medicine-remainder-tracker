@@ -2,7 +2,9 @@ package com.careplan.service;
 
 import com.careplan.dto.DoseLogRequest;
 import com.careplan.dto.DoseLogResponse;
+import com.careplan.dto.OverdueDoseResponse;
 import com.careplan.entity.DoseLog;
+import com.careplan.entity.Patient;
 import com.careplan.entity.Schedule;
 import com.careplan.enums.DoseStatus;
 import com.careplan.enums.Frequency;
@@ -13,6 +15,7 @@ import com.careplan.repository.DoseLogRepository;
 import com.careplan.repository.PatientRepository;
 import com.careplan.repository.ScheduleRepository;
 import java.time.LocalDate;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -20,6 +23,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,14 +38,20 @@ public class DoseService {
     private final DoseLogRepository doseLogRepository;
     private final ScheduleRepository scheduleRepository;
     private final PatientRepository patientRepository;
+    private final Duration overdueThreshold;
 
     public DoseService(
             DoseLogRepository doseLogRepository,
             ScheduleRepository scheduleRepository,
-            PatientRepository patientRepository) {
+            PatientRepository patientRepository,
+            @Value("${careplan.doses.overdue-threshold:PT1H}") Duration overdueThreshold) {
         this.doseLogRepository = doseLogRepository;
         this.scheduleRepository = scheduleRepository;
         this.patientRepository = patientRepository;
+        if (overdueThreshold.isNegative()) {
+            throw new IllegalArgumentException("Overdue threshold cannot be negative");
+        }
+        this.overdueThreshold = overdueThreshold;
     }
 
     public DoseLogResponse create(DoseLogRequest request) {
@@ -111,6 +121,48 @@ public class DoseService {
         return toResponse(doseLogRepository.save(doseLog));
     }
 
+        @Transactional(readOnly = true)
+        public List<DoseLogResponse> getMissedDoses(Long patientId, LocalDate from, LocalDate to) {
+        patientRepository.findById(patientId)
+            .orElseThrow(() -> new ResourceNotFoundException("Patient", patientId));
+        if (from == null) {
+            throw new IllegalArgumentException("From date is required");
+        }
+        if (to == null) {
+            throw new IllegalArgumentException("To date is required");
+        }
+        if (from.isAfter(to)) {
+            throw new IllegalArgumentException("From date cannot be after to date");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        return doseLogRepository
+            .findAllBySchedule_Patient_IdAndScheduledDateBetweenOrderByScheduledDateAscScheduledTimeAsc(
+                patientId, from, to)
+            .stream()
+            .filter(doseLog -> doseLog.getStatus() == DoseStatus.MISSED || isOverdue(doseLog, now))
+            .map(doseLog -> toResponse(doseLog,
+                doseLog.getStatus() == DoseStatus.MISSED ? DoseStatus.MISSED : DoseStatus.OVERDUE))
+            .toList();
+        }
+
+        @Transactional(readOnly = true)
+        public List<OverdueDoseResponse> getOverdueDoses(Long patientId) {
+        Patient patient = patientRepository.findById(patientId)
+            .orElseThrow(() -> new ResourceNotFoundException("Patient", patientId));
+        LocalDateTime now = LocalDateTime.now();
+        return doseLogRepository
+            .findAllBySchedule_Patient_IdAndStatusNotAndScheduledDateLessThanEqualOrderByScheduledDateAscScheduledTimeAsc(
+                patientId, DoseStatus.TAKEN, now.toLocalDate())
+            .stream()
+            .filter(doseLog -> isOverdue(doseLog, now))
+            .map(doseLog -> new OverdueDoseResponse(
+                doseLog.getId(), patient.getId(), patient.getName(),
+                doseLog.getSchedule().getMedicine().getName(), doseLog.getSchedule().getDosage(),
+                doseLog.getScheduledDate(), doseLog.getScheduledTime(), DoseStatus.OVERDUE))
+            .toList();
+        }
+
     private void validate(DoseLogRequest request) {
         if (request == null) {
             throw new IllegalArgumentException("Dose log request is required");
@@ -138,6 +190,12 @@ public class DoseService {
                 && ChronoUnit.DAYS.between(schedule.getStartDate(), date) % 7 == 0;
     }
 
+    private boolean isOverdue(DoseLog doseLog, LocalDateTime now) {
+        return doseLog.getStatus() != DoseStatus.TAKEN
+                && now.isAfter(LocalDateTime.of(doseLog.getScheduledDate(), doseLog.getScheduledTime())
+                        .plus(overdueThreshold));
+    }
+
     private DoseLog saveNewDoseLog(DoseLog doseLog) {
         try {
             return doseLogRepository.saveAndFlush(doseLog);
@@ -147,10 +205,14 @@ public class DoseService {
     }
 
     private DoseLogResponse toResponse(DoseLog doseLog) {
+        return toResponse(doseLog, doseLog.getStatus());
+    }
+
+    private DoseLogResponse toResponse(DoseLog doseLog, DoseStatus status) {
         Schedule schedule = doseLog.getSchedule();
         return new DoseLogResponse(doseLog.getId(), schedule.getId(),
                 schedule.getMedicine().getName(), schedule.getDosage(),
-                doseLog.getScheduledDate(), doseLog.getScheduledTime(), doseLog.getStatus(),
+                doseLog.getScheduledDate(), doseLog.getScheduledTime(), status,
                 doseLog.getTakenAt(), doseLog.getCreatedAt());
     }
 
